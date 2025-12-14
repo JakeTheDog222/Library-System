@@ -23,7 +23,6 @@ Quick setup:
 4. Run cron/reminders.php daily via CLI to list/send reminders.
 
 
-Design a modern, aesthetically pleasing card layout for a “Book Genres” section.
 
 Requirements:
 - Each genre should be displayed inside a card component.
