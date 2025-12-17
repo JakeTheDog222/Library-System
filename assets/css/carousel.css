@@ -97,24 +97,7 @@
 }
 
 .carousel-control {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    background: rgba(255, 255, 255, 0.8);
-    border: 2px solid rgba(255, 255, 255, 0.9);
-    color: #333;
-    font-size: 2rem;
-    padding: 15px;
-    cursor: pointer;
-    border-radius: 50%;
-    transition: all 0.3s ease;
-    z-index: 10;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: none;
 }
 
 .carousel-control:hover {
@@ -166,15 +149,42 @@
     padding: 20px 0;
 }
 
+/* Center featured books title and description */
+#book-shelf .text h2,
+#book-shelf .text p {
+    text-align: center;
+}
+
+/* Add colored line under the title */
+#book-shelf .text h2 {
+    position: relative;
+    margin-bottom: 15px;
+}
+
+#book-shelf .text h2::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 3px;
+    background: linear-gradient(90deg, #800000, #a00000);
+    border-radius: 2px;
+}
+
 .book-shelf-horizontal {
     display: flex;
     gap: 20px;
-    overflow-x: hidden;
+    overflow-x: auto;
     padding: 10px 0;
     scroll-behavior: smooth;
     scrollbar-width: thin;
     scrollbar-color: rgba(128, 0, 0, 0.3) transparent;
     transition: transform 0.1s ease-out;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .book-card {
@@ -269,6 +279,7 @@
     color: #8b3605;
     line-height: 1.4;
     word-wrap: break-word;
+    padding-left: 15px;
 }
 
 .book-author {
@@ -277,6 +288,7 @@
     margin: 0 0 12px 0;
     font-style: italic;
     font-weight: 600;
+    padding-left: 15px;
 }
 
 .book-details {
@@ -286,6 +298,7 @@
     margin-bottom: 18px;
     font-size: 0.9rem;
     font-weight: 600;
+    padding-left: 15px;
 }
 
 

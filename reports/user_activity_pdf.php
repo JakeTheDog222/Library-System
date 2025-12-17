@@ -1,4 +1,8 @@
 <?php
+// Suppress warnings for PDF generation
+error_reporting(E_ERROR | E_PARSE);
+ini_set('display_errors', 0);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../classes/Database.php';
 require_once __DIR__ . '/../vendor/tcpdf/tcpdf.php';
@@ -13,13 +17,13 @@ $pdo = $db->getPdo();
 
 // Query data
 $query = "
-    SELECT u.username, u.role, u.full_name,
+    SELECT u.username, u.role, CONCAT(u.first_name, ' ', COALESCE(u.middle_name, ''), ' ', u.last_name) as full_name,
            COUNT(bh.id) as total_books_borrowed,
            CASE WHEN u.penalty_status = 'blocked' THEN 'Blocked' ELSE 'Active' END as account_status
     FROM users u
     LEFT JOIN borrow_history bh ON u.id = bh.user_id
     WHERE u.role = 'student'
-    GROUP BY u.id, u.username, u.role, u.full_name, u.penalty_status
+    GROUP BY u.id, u.username, u.role, u.first_name, u.middle_name, u.last_name, u.penalty_status
     ORDER BY total_books_borrowed DESC
 ";
 $stmt = $pdo->prepare($query);

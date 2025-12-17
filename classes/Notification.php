@@ -7,7 +7,7 @@ class Notification extends Database {
         'approval' => 'Your borrow request has been approved.',
         'return' => 'A book has been returned successfully.',
         'overdue' => 'A borrowed book is overdue.',
-        'reminder' => 'Reminder about an upcoming due date.',
+        'due_reminder' => 'Reminder about an upcoming due date.',
         'rejection' => 'Your borrow request has been rejected.',
         'cancellation' => 'Your borrow request has been cancelled.',
         'fine' => 'A fine has been added for an overdue book.'

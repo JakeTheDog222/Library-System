@@ -1,4 +1,8 @@
 <?php
+// Suppress warnings for PDF generation
+error_reporting(E_ERROR | E_PARSE);
+ini_set('display_errors', 0);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../classes/Database.php';
 require_once __DIR__ . '/../vendor/tcpdf/tcpdf.php';
@@ -13,7 +17,9 @@ $pdo = $db->getPdo();
 
 // Query data
 $query = "
-    SELECT bh.borrow_date, bh.due_date, u.full_name as borrower_name, b.title, b.author
+    SELECT bh.borrow_date, bh.due_date,
+           CONCAT(u.first_name, ' ', COALESCE(u.middle_name, ''), ' ', u.last_name) as borrower_name,
+           b.title, b.author
     FROM borrow_history bh
     JOIN users u ON bh.user_id = u.id
     JOIN books b ON bh.book_id = b.id

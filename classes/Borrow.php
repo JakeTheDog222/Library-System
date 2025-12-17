@@ -208,9 +208,9 @@ class Borrow extends Database {
         foreach ($upcoming_dues as $borrow) {
             // Check if reminder already sent
             $check = $this->pdo->prepare("SELECT id FROM notifications WHERE user_id = ? AND type = ? AND message LIKE ?");
-            $check->execute([$borrow['user_id'], 'reminder', "%{$borrow['title']}%"]);
+            $check->execute([$borrow['user_id'], 'due_reminder', "%{$borrow['title']}%"]);
             if (!$check->fetch()) {
-                $notification->create($borrow['user_id'], 'reminder', "Reminder: Your borrowed book '{$borrow['title']}' is due on {$borrow['due_date']}. Please return it on time to avoid fines.");
+                $notification->create($borrow['user_id'], 'due_reminder', "Reminder: Your borrowed book '{$borrow['title']}' is due on {$borrow['due_date']}. Please return it on time to avoid fines.");
             }
         }
     }

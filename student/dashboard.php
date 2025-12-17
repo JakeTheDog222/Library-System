@@ -1,4 +1,4 @@
-s <?php
+    <?php
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../classes/Borrow.php';
 require_once __DIR__ . '/../classes/Book.php';
@@ -8,51 +8,81 @@ require_once __DIR__ . '/../classes/Fine.php';
 require_once __DIR__ . '/../classes/Reservation.php';
 if (!is_student()) { header('Location: index.php'); exit; }
 
+$uid = $_SESSION['user']['id'];
+
 // Handle AJAX request for statistics details
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['get_stat'])) {
-    $stat = trim($_POST['stat'] ?? '');
-    $uid = $_SESSION['user']['id'];
-    $data = [];
+    header('Content-Type: application/json');
+    try {
+        global $pdo;
+        $stat = trim($_POST['stat'] ?? '');
+        if (!isset($_SESSION['user']['id'])) {
+            echo json_encode(['error' => 'Session not found']);
+            exit;
+        }
+        $uid = $_SESSION['user']['id'];
 
-    switch ($stat) {
-        case 'distinct_books':
-            $stmt = $pdo->prepare('SELECT DISTINCT b.title, b.author, COUNT(bh.book_id) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? GROUP BY bh.book_id ORDER BY borrow_count DESC');
-            $stmt->execute([$uid]);
-            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            break;
-        case 'total_borrows':
-            $stmt = $pdo->prepare('SELECT b.title, bh.borrow_date, bh.return_date, bh.status FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? ORDER BY bh.id DESC');
-            $stmt->execute([$uid]);
-            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            break;
-        case 'current_borrowed':
-            $stmt = $pdo->prepare('SELECT b.title, bh.borrow_date, bh.due_date FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? AND bh.status IN (?, ?) ORDER BY bh.due_date ASC');
-            $stmt->execute([$uid, 'pending', 'borrowed']);
-            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            break;
-        case 'overdue_borrows':
-            $stmt = $pdo->prepare('SELECT b.title, bh.due_date, DATEDIFF(CURDATE(), bh.due_date) as days_overdue FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? AND bh.status = ? ORDER BY bh.due_date ASC');
-            $stmt->execute([$uid, 'overdue']);
-            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            break;
-        case 'most_borrowed_book':
-            $stmt = $pdo->prepare('SELECT b.title, b.author, b.genre, COUNT(*) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? GROUP BY bh.book_id ORDER BY borrow_count DESC LIMIT 1');
-            $stmt->execute([$uid]);
-            $data = $stmt->fetch(PDO::FETCH_ASSOC);
-            break;
-        case 'favorite_genre':
-            $stmt = $pdo->prepare('SELECT b.genre, COUNT(*) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? GROUP BY b.genre ORDER BY borrow_count DESC LIMIT 1');
-            $stmt->execute([$uid]);
-            $data = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($data) {
-                $genreStmt = $pdo->prepare('SELECT b.title, b.author, COUNT(bh.book_id) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? AND b.genre = ? GROUP BY bh.book_id ORDER BY borrow_count DESC');
-                $genreStmt->execute([$uid, $data['genre']]);
-                $data['books'] = $genreStmt->fetchAll(PDO::FETCH_ASSOC);
-            }
-            break;
-    }
+        // Handle different statistics requests
+        switch ($stat) {
+            case 'distinct_books':
+                $stmt = $pdo->prepare('SELECT b.title, b.author, COUNT(*) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? GROUP BY bh.book_id ORDER BY borrow_count DESC');
+                $stmt->execute([$uid]);
+                $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($result);
+                break;
 
-    echo json_encode($data);
+            case 'total_borrows':
+                $stmt = $pdo->prepare('SELECT b.title, bh.borrow_date, bh.return_date, bh.status FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? ORDER BY bh.id DESC');
+                $stmt->execute([$uid]);
+                $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($result);
+                break;
+
+            case 'current_borrowed':
+                $stmt = $pdo->prepare('SELECT b.title, bh.borrow_date, bh.due_date FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? AND bh.status IN (?, ?) ORDER BY bh.id DESC');
+                $stmt->execute([$uid, 'pending', 'borrowed']);
+                $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($result);
+                break;
+
+            case 'overdue_borrows':
+                $stmt = $pdo->prepare('SELECT b.title, bh.due_date, DATEDIFF(CURDATE(), bh.due_date) as days_overdue FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? AND bh.status = ? AND bh.due_date < CURDATE() ORDER BY bh.due_date ASC');
+                $stmt->execute([$uid, 'overdue']);
+                $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode($result);
+                break;
+
+            case 'most_borrowed_book':
+                $stmt = $pdo->prepare('SELECT b.title, b.author, b.genre, COUNT(*) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? GROUP BY bh.book_id ORDER BY borrow_count DESC LIMIT 1');
+                $stmt->execute([$uid]);
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                echo json_encode($result);
+                break;
+
+            case 'favorite_genre':
+                $stmt = $pdo->prepare('SELECT b.genre, COUNT(*) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? GROUP BY b.genre ORDER BY borrow_count DESC LIMIT 1');
+                $stmt->execute([$uid]);
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                if ($result) {
+                    // Get books in this genre
+                    $booksStmt = $pdo->prepare('SELECT b.title, b.author, COUNT(*) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? AND b.genre = ? GROUP BY bh.book_id ORDER BY borrow_count DESC');
+                    $booksStmt->execute([$uid, $result['genre']]);
+                    $result['books'] = $booksStmt->fetchAll(PDO::FETCH_ASSOC);
+                }
+
+                echo json_encode($result);
+                break;
+
+            default:
+                echo json_encode(['error' => 'Invalid statistics type']);
+                break;
+        }
+        } catch (Exception $e) {
+            // Return JSON error response instead of HTML error page
+            error_log("Statistics error: " . $e->getMessage());
+            echo json_encode(['error' => 'Database error occurred while loading statistics: ' . $e->getMessage()]);
+        }
     exit;
 }
 
@@ -83,6 +113,17 @@ $userFines = $fine->getUserFines($uid);
 $reservation = new Reservation($pdo);
 $reservations = $reservation->getUserReservations($uid);
 
+// Get borrow history records (needed for statistics calculation)
+$historyStmt = $pdo->prepare('SELECT bh.*, b.title, b.author, b.genre, b.publication_date FROM borrow_history bh JOIN books b ON b.id = bh.book_id WHERE bh.user_id = ? ORDER BY bh.id DESC');
+$historyStmt->execute([$uid]);
+$historyRecords = $historyStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Calculate statistics (moved here after historyRecords is fetched)
+$distinctBooksCount = count(array_unique(array_column($historyRecords, 'book_id')));
+$totalBorrowsCount = count($historyRecords);
+$currentBorrowedCount = count(array_filter($records, function($r) { return in_array($r['status'], ['pending', 'borrowed']); }));
+$overdueCount = count(array_filter($records, function($r) { return $r['status'] === 'overdue'; }));
+
 // Get most borrowed book
 $mostBorrowedBook = $pdo->prepare('SELECT b.title, COUNT(*) as borrow_count FROM borrow_history bh JOIN books b ON bh.book_id = b.id WHERE bh.user_id = ? GROUP BY bh.book_id ORDER BY borrow_count DESC LIMIT 1');
 $mostBorrowedBook->execute([$uid]);
@@ -103,6 +144,58 @@ $mostGenre = $mostBorrowedGenre->fetch();
     <link rel="stylesheet" href="../assets/css/carousel.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        /* Entrance Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.8s ease-out forwards;
+        }
+
+        .animate-fade-in-up {
+            animation: fadeInUp 0.8s ease-out forwards;
+        }
+
+        .animate-slide-in-left {
+            animation: slideInLeft 0.8s ease-out forwards;
+        }
+
+        /* Staggered animation delays */
+        .animate-delay-1 { animation-delay: 0.1s; }
+        .animate-delay-2 { animation-delay: 0.2s; }
+        .animate-delay-3 { animation-delay: 0.3s; }
+        .animate-delay-4 { animation-delay: 0.4s; }
+        .animate-delay-5 { animation-delay: 0.5s; }
+        .animate-delay-6 { animation-delay: 0.6s; }
+
         /* Override to always show borrow buttons on bookshelf */
         #book-shelf .book-actions .borrow-btn {
             opacity: 1 !important;
@@ -111,13 +204,147 @@ $mostGenre = $mostBorrowedGenre->fetch();
         }
 
         /* Smooth Navigation Animations with Smoke Effect */
-        header nav ul {
+        header nav {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+        }
+
+        header nav .nav-links,
+        header nav .nav-actions {
             display: flex;
             align-items: center;
             gap: 10px;
             list-style: none;
             margin: 0;
             padding: 0;
+        }
+
+        header nav .nav-links li,
+        header nav .nav-actions li {
+            position: relative;
+        }
+
+        .burger-menu {
+            display: none;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 10px;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        .burger-menu:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Mobile Styles */
+        @media (max-width: 768px) {
+            header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                padding: 10px 15px;
+                box-sizing: border-box;
+                background-color: red !important;
+            }
+
+            header > div {
+                flex-shrink: 0;
+            }
+
+            header nav {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex: 1;
+                justify-content: flex-end;
+                min-width: 0;
+            }
+
+            .burger-menu {
+                display: block;
+                font-size: 0.6rem !important;
+                padding: 2px !important;
+                flex-shrink: 0;
+                margin-left: 10px;
+            }
+
+            header nav .nav-links {
+                display: none;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: rgba(0, 0, 0, 0.9);
+                flex-direction: column;
+                padding: 20px;
+                border-radius: 0 0 10px 10px;
+                z-index: 1000;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            }
+
+            header nav .nav-links.nav-open {
+                display: flex;
+            }
+
+            header nav .nav-links li {
+                width: 100%;
+                text-align: center;
+            }
+
+            header nav .nav-links li a {
+                display: block;
+                padding: 15px 20px;
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+            header nav .nav-actions {
+                display: flex;
+                align-items: center;
+                gap: 1px;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+                min-width: 0;
+            }
+
+            header nav .nav-actions li {
+                flex-shrink: 0;
+            }
+
+            /* Adjust logo and title size on mobile */
+            header > div img {
+                width: 40px !important;
+                height: 40px !important;
+            }
+
+            header > div h1 {
+                font-size: 1.2rem !important;
+            }
+
+            /* Adjust notification bell, logout, and welcome text size on mobile */
+            .notification-bell i {
+                font-size: 1rem !important;
+            }
+
+            .logout {
+                font-size: 0.8rem !important;
+                padding: 6px 10px !important;
+            }
+
+            .welcome-text {
+                font-size: 0.6rem !important;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 80px;
+            }
         }
 
         /* Enlarge search bars, filters, buttons, and tables */
@@ -192,6 +419,21 @@ $mostGenre = $mostBorrowedGenre->fetch();
             padding: 12px 16px !important;
         }
 
+        /* Fix featured books text overflow */
+        .book-title {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
+        }
+
+        .book-author {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
+        }
+
         /* Enlarge notification dropdown */
         .notification-item {
             font-size: 1rem !important;
@@ -209,11 +451,8 @@ $mostGenre = $mostBorrowedGenre->fetch();
             padding: 12px 16px !important;
         }
 
-        header nav ul li {
-            position: relative;
-        }
-
-        header nav ul li a {
+        header nav .nav-links li a,
+        header nav .nav-actions li a {
             color: white;
             text-decoration: none;
             padding: 10px 15px;
@@ -224,8 +463,10 @@ $mostGenre = $mostBorrowedGenre->fetch();
         }
 
         /* Smoke effect using multiple pseudo-elements */
-        header nav ul li a::before,
-        header nav ul li a::after {
+        header nav .nav-links li a::before,
+        header nav .nav-links li a::after,
+        header nav .nav-actions li a::before,
+        header nav .nav-actions li a::after {
             content: '';
             position: absolute;
             top: 0;
@@ -238,29 +479,34 @@ $mostGenre = $mostBorrowedGenre->fetch();
             transition: all 0.6s ease;
         }
 
-        header nav ul li a::after {
+        header nav .nav-links li a::after,
+        header nav .nav-actions li a::after {
             background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 80%);
             animation: smoke-rise 2s ease-in-out infinite;
         }
 
-        header nav ul li a:hover::before {
+        header nav .nav-links li a:hover::before,
+        header nav .nav-actions li a:hover::before {
             opacity: 1;
             transform: scale(1.2);
             animation: smoke-puff 0.8s ease-out;
         }
 
-        header nav ul li a:hover::after {
+        header nav .nav-links li a:hover::after,
+        header nav .nav-actions li a:hover::after {
             opacity: 0.8;
             animation: smoke-drift 3s ease-in-out infinite;
         }
 
-        header nav ul li a:hover {
+        header nav .nav-links li a:hover,
+        header nav .nav-actions li a:hover {
             background: rgba(255, 255, 255, 0.1);
             transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
 
-        header nav ul li a:active {
+        header nav .nav-links li a:active,
+        header nav .nav-actions li a:active {
             transform: translateY(0);
             transition: transform 0.1s ease;
         }
@@ -371,19 +617,22 @@ $mostGenre = $mostBorrowedGenre->fetch();
     </style>
 </head>
 <body class="student-page">
-    <header class="no-left-radius">
+    <header class="no-left-radius animate-fade-in">
         <div style="display: flex; align-items: center; gap: 15px;">
             <img src="../image/WMSU.png" alt="WMSU Logo" style="width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
             <h1 style="margin: 0; font-size: 1.8rem; font-weight: 600; color: white;">WMSU Library</h1>
         </div>
         <nav>
-            <ul>
+            <ul class="nav-links">
                 <li><a href="#overview">Overview</a></li>
                 <li><a href="#book-shelf">Featured Books</a></li>
                 <li><a href="#borrowed">Borrowed Books</a></li>
                 <li><a href="#borrow-history">Borrow History</a></li>
                 <li><a href="#available">Available Books</a></li>
                 <li><a href="#genres">Statistics</a></li>
+            </ul>
+            <ul class="nav-actions">
+                <li class="welcome-text">Welcome, <?= htmlspecialchars($_SESSION['user']['full_name']) ?>!</li>
                 <li>
                     <div class="notification-bell" style="position: relative; cursor: pointer;">
                         <i class="fas fa-bell fa-lg"></i>
@@ -423,28 +672,25 @@ $mostGenre = $mostBorrowedGenre->fetch();
                             ">
                             <?php if(!empty($notifications)): ?>
                                 <div style="padding: 10px; text-align: right; border-bottom: 1px solid #ddd;">
-                                    <button onclick="markAllAsRead()" style="background: #800000; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">Mark All as Read</button>
+                                    <button onclick="markAllAsRead()" style="background: #800000; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Mark All as Read</button>
                                 </div>
                                 <?php foreach($notifications as $n): ?>
-                                    <div class="notification-item" id="notification-<?= $n['id'] ?>" style="margin: 5px 10px; padding: 10px; padding-bottom: 40px; border-bottom: 1px solid #ddd; position: relative; word-wrap: break-word; white-space: normal;">
+                                    <div class="notification-item" id="notification-<?= $n['id'] ?>" style="margin: 5px 10px; padding: 10px; border-bottom: 1px solid #ddd; word-wrap: break-word; white-space: normal;">
                                         <div style="font-weight: bold; color: #800000; margin-bottom: 5px;"><?= ucfirst($n['type']) ?> - <?= htmlspecialchars($notification->getDescription($n['type'])) ?></div>
                                         <div style="margin-bottom: 5px;"><?= htmlspecialchars($n['message']) ?: 'No message content' ?></div>
-                                        <div style="font-size: 0.8rem; color: #666; margin-bottom: 5px;">
+                                        <div style="font-size: 0.8rem; color: #666; margin-bottom: 10px;">
                                             <span>Status: <strong style="color: #dc3545;">Unread</strong></span> |
                                             <span>Time: <?= date('M d, Y H:i', strtotime($n['created_at'])) ?></span>
                                         </div>
                                         <button onclick="markAsRead(<?= $n['id'] ?>)" style="
-                                            position: absolute;
-                                            bottom: 10px;
-                                            right: 10px;
                                             color: #1e88e5;
                                             background: none;
                                             border: none;
                                             cursor: pointer;
+                                            text-decoration: underline;
                                             font-size: 0.9rem;
-                                            ">
-                                            Mark Read
-                                        </button>
+                                            padding: 0;
+                                        ">Mark as Read</button>
                                     </div>
                                 <?php endforeach; ?>
                             <?php else: ?>
@@ -453,9 +699,9 @@ $mostGenre = $mostBorrowedGenre->fetch();
                         </div>
                     </div>
                 </li>
-                <li>Welcome, <?= htmlspecialchars($_SESSION['user']['full_name']) ?>!</li>
                 <li><a href="../logout.php" class="logout">Logout</a></li>
             </ul>
+            <button class="burger-menu" onclick="toggleMenu()">&#9776;</button>
         </nav>
     <style>
         /* Notification dropdown styling */
@@ -479,6 +725,11 @@ $mostGenre = $mostBorrowedGenre->fetch();
         }
     </style>
     <script>
+        function toggleMenu() {
+            const navLinks = document.querySelector('.nav-links');
+            navLinks.classList.toggle('nav-open');
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const bell = document.querySelector('.notification-bell');
             const dropdown = document.querySelector('.notification-dropdown');
@@ -585,7 +836,7 @@ $mostGenre = $mostBorrowedGenre->fetch();
     <main>
         <div class="content">
         <!-- Image Carousel Section -->
-        <section class="carousel-section">
+        <section class="carousel-section animate-fade-in-up animate-delay-2">
             <div class="carousel-container">
                 <div class="carousel-slides">
                     <div class="carousel-slide active" style="background-image: url('../image/library.jpg');">
@@ -631,7 +882,7 @@ $mostGenre = $mostBorrowedGenre->fetch();
 <label for="ratingSlider">Rating: <span id="ratingValue">3</span></label></form></div></div><?php endif; ?>
 </main>
 
-        <section id="overview" class="zigzag-section" style="min-height: 600px;">
+        <section id="overview" class="zigzag-section animate-fade-in-up animate-delay-3" style="min-height: 600px;">
             <div class="text">
                 <h2>Library</h2>
                 <p>The purpose of this Library Book Borrowing System is to provide WMSU students with an efficient and user-friendly platform to borrow, return, and manage books.</p>
@@ -650,20 +901,24 @@ $mostGenre = $mostBorrowedGenre->fetch();
         </section>
         
         <!-- Interactive Book Shelf Section -->
-        <section id="book-shelf" class="zigzag-section" style="position: relative; background-image: url('../image/backgroundstudent5.jpg'); background-size: cover; background-position: center;">
+        <section id="book-shelf" class="zigzag-section animate-fade-in-up animate-delay-4" style="position: relative; background-image: url('../image/backgroundstudent5.jpg'); background-size: cover; background-position: center;">
             <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; backdrop-filter: blur(3px); z-index: 1;"></div>
-            <div style="position: relative; z-index: 2;">
-            <div class="text">
-                <h2 style="color: red;">Featured Books</h2>
-                <p style="color: white;">Discover our most popular and recently added books. Browse through our curated collection and find your next great read.</p>
+            <div style="position: relative; z-index: 2; width: 100%;">
+                <div class="text">
+                    <h2>Featured Books</h2>
+                    <p>Discover our most popular and recently added books. Browse through our curated collection and find your next great read.</p>
+                </div>
                 <div class="library-shelf">
                     <?php
                     // Fetch featured books (recently added or popular)
                     $featuredBooks = $pdo->query('SELECT * FROM books WHERE deleted = 0 ORDER BY id DESC LIMIT 12')->fetchAll(PDO::FETCH_ASSOC);
                     // Duplicate books for infinite scroll effect
                     $allBooks = array_merge($featuredBooks, $featuredBooks, $featuredBooks);
+                    $totalBooks = count($allBooks);
                     ?>
-                    <div class="book-shelf-horizontal" id="bookShelfSlider" style="width: auto; display: flex; overflow-x: auto; scroll-behavior: smooth;">
+                    <div class="book-shelf-container" style="overflow-x: auto; width: 100%;">
+                        <div class="book-shelf-horizontal" id="bookShelfSlider" style="display: flex; width: 100%;">
+                            <script>console.log('Total books in shelf: <?php echo $totalBooks; ?>');</script>
                         <?php foreach($allBooks as $index => $book): ?>
                             <?php
                             // Check if user has pending request or borrowed this book
@@ -723,17 +978,17 @@ $mostGenre = $mostBorrowedGenre->fetch();
                                 </div>
                             </div>
                         <?php endforeach; ?>
+                        </div>
                     </div>
-        </div>
-    </div>
-    <div class="image">
-        <!-- No image in this section -->
-    </div>
-    </div>
-</section>
+                </div>
+                <div class="image">
+                    <!-- No image in this section -->
+                </div>
+            </div>
+        </section>
 
 
-        <section id="borrowed" class="zigzag-section">
+        <section id="borrowed" class="zigzag-section animate-fade-in-up animate-delay-5">
             <div class="text" style="width: 100%;">
                 <h2>Your Borrowed Books</h2>
                 <div class="search-bar" style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px; flex-wrap: wrap;">
@@ -750,7 +1005,7 @@ $mostGenre = $mostBorrowedGenre->fetch();
                 </div>
                 <div id="borrowedAdvancedSearch" style="display: none; background: #f9f9f9; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
                     <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                        <label for="borrowedYearFilter" style="font-weight: bold;">Publication Year:</label>
+                        <label for="borrowedYearFilter" style="font-weight: bold;">Borrow Year:</label>
                         <input type="number" id="borrowedYearFilter" placeholder="e.g., 2020" style="padding: 6px; border: 1px solid #ccc; border-radius: 5px; width: 120px;">
                         <button onclick="borrowedAdvancedSearch()" class="btn" style="padding: 10px 2px; font-size: 12px; width: 300px;">Search</button>
                     </div>
@@ -815,7 +1070,7 @@ $mostGenre = $mostBorrowedGenre->fetch();
             </div>
         </section>
 
-        <section id="borrow-history" class="zigzag-section">
+        <section id="borrow-history" class="zigzag-section animate-fade-in-up animate-delay-6">
             <div class="text" style="width: 100%;">
                 <h2>Borrowed History</h2>
                 <div class="search-bar" style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
@@ -833,7 +1088,7 @@ $mostGenre = $mostBorrowedGenre->fetch();
                 </div>
                 <div id="historyAdvancedSearch" style="display: none; background: #f9f9f9; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
                     <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                        <label for="historyYearFilter" style="font-weight: bold;">Publication Year:</label>
+                        <label for="historyYearFilter" style="font-weight: bold;">Borrow Year:</label>
                         <input type="number" id="historyYearFilter" placeholder="e.g., 2020" style="padding: 6px; border: 1px solid #ccc; border-radius: 5px; width: 120px;">
                         <button onclick="historyAdvancedSearch()" class="btn" style="padding: 10px 2px; font-size: 12px; width: 300px;">Search</button>
                     </div>
@@ -853,11 +1108,6 @@ $mostGenre = $mostBorrowedGenre->fetch();
                             </tr>
                         </thead>
                         <tbody>
-                            <?php
-                            $historyStmt = $pdo->prepare('SELECT bh.*, b.title, b.author, b.genre, b.publication_date FROM borrow_history bh JOIN books b ON b.id = bh.book_id WHERE bh.user_id = ? ORDER BY bh.id DESC');
-                            $historyStmt->execute([$uid]);
-                            $historyRecords = $historyStmt->fetchAll(PDO::FETCH_ASSOC);
-                            ?>
                             <?php if(empty($historyRecords)): ?>
                                 <tr>
                                     <td colspan="4" style="text-align: center; color: #666; font-style: italic;">No borrowing history yet.</td>
@@ -956,7 +1206,7 @@ $mostGenre = $mostBorrowedGenre->fetch();
             </div>
         </section>
 
-        <section id="available" class="zigzag-section" style="position: relative; overflow: hidden; background: transparent;">
+        <section id="available" class="zigzag-section animate-fade-in-up animate-delay-4" style="position: relative; overflow: hidden; background: transparent;">
             <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-image: url('../image/backgroundstudent3.png'); background-size: cover; background-position: center; z-index: -1;"></div>
             <div class="text" style="background: rgba(255, 255, 255, 0.8); padding: 20px; border-radius: 8px; margin: 20px;">
                 <h2>Available Books</h2>
@@ -1141,12 +1391,6 @@ $mostGenre = $mostBorrowedGenre->fetch();
         const dots = document.querySelectorAll('.carousel-dot');
         let slideInterval;
 
-        // Infinite scrolling book shelf variables
-        let bookShelfInterval;
-        let scrollPosition = 0;
-        let bookShelf, bookCards, cardWidth, totalCards, originalCards;
-        let animationSpeed = 2; // pixels per frame
-
         function showSlide(index) {
             slides.forEach(slide => slide.classList.remove('active'));
             dots.forEach(dot => dot.classList.remove('active'));
@@ -1174,44 +1418,67 @@ $mostGenre = $mostBorrowedGenre->fetch();
             clearInterval(slideInterval);
         }
 
+        // Infinite scrolling book shelf variables
+        let bookShelfInterval;
+        let scrollPosition = 0;
+        let bookShelf, bookCards, cardWidth, totalCards, originalCards;
+        let animationSpeed = 400; // pixels per frame - faster for visibility
+        let isUserScrolling = false;
+        let scrollTimeout;
+
         // Infinite scrolling book shelf functions
         function initBookShelf() {
             console.log('Initializing bookshelf');
             bookShelf = document.getElementById('bookShelfSlider');
             console.log('bookShelf element:', bookShelf);
+            if (!bookShelf) {
+                console.error('bookShelfSlider element not found!');
+                return;
+            }
             bookCards = document.querySelectorAll('.book-card');
             console.log('bookCards found:', bookCards.length);
             cardWidth = 300; // Approximate width of each book card including margin and gap
             totalCards = bookCards.length;
             originalCards = totalCards / 3; // Since we duplicated 3 times
 
-            // Pause auto-play on hover
-            if (bookShelf) {
-                bookShelf.addEventListener('mouseenter', stopBookShelfAutoPlay);
-                bookShelf.addEventListener('mouseleave', startBookShelfAutoPlay);
-                console.log('Event listeners added to bookshelf');
-            } else {
-                console.log('bookShelf element not found during initialization');
+            // Pause auto-play on hover and manual scroll
+            bookShelf.addEventListener('mouseenter', stopBookShelfAutoPlay);
+            bookShelf.addEventListener('mouseleave', startBookShelfAutoPlay);
+            bookShelf.addEventListener('scroll', handleManualScroll);
+            console.log('Event listeners added to bookshelf');
+        }
+
+        function handleManualScroll() {
+            isUserScrolling = true;
+            stopBookShelfAutoPlay();
+
+            // Clear existing timeout
+            if (scrollTimeout) {
+                clearTimeout(scrollTimeout);
             }
+
+            // Resume auto-play after user stops scrolling
+            scrollTimeout = setTimeout(() => {
+                isUserScrolling = false;
+                startBookShelfAutoPlay();
+            }, 2000); // Resume after 2 seconds of no scrolling
         }
 
         function startBookShelfAutoPlay() {
-            if (bookShelf) {
-                // Use transform instead of scrollLeft for better animation control
-                let currentTranslateX = 0;
-                const resetPoint = -(bookShelf.scrollWidth / 3);
+            if (bookShelf && !isUserScrolling) {
+                console.log('Starting bookshelf animation');
+                bookShelfInterval = setInterval(() => {
+                    if (isUserScrolling) return;
 
-                function animate() {
-                    currentTranslateX -= animationSpeed;
+                    bookShelf.scrollLeft += animationSpeed;
 
-                    if (currentTranslateX <= resetPoint) {
-                        currentTranslateX = 0;
+                    // Reset to beginning when reaching the end of original content
+                    if (bookShelf.scrollLeft >= bookShelf.scrollWidth / 3) {
+                        bookShelf.scrollLeft = 0;
                     }
-
-                    bookShelf.style.transform = `translateX(${currentTranslateX}px)`;
-                    bookShelfInterval = requestAnimationFrame(animate);
-                }
-                animate();
+                }, 50); // 50ms interval for smooth animation
+            } else {
+                console.log('Cannot start animation - bookShelf:', !!bookShelf, 'isUserScrolling:', isUserScrolling);
             }
         }
 
@@ -1224,7 +1491,6 @@ $mostGenre = $mostBorrowedGenre->fetch();
 
         // Initialize everything
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('DOM loaded, initializing components');
             startAutoSlide();
             initBookShelf();
             startBookShelfAutoPlay();
@@ -1607,18 +1873,18 @@ $mostGenre = $mostBorrowedGenre->fetch();
 
             for (let i = 0; i < borrowedRows.length; i++) {
                 const title = borrowedRows[i].getElementsByTagName('td')[0].textContent.toLowerCase();
-                const author = borrowedRows[i].getElementsByTagName('td')[1] ? borrowedRows[i].getElementsByTagName('td')[1].textContent.toLowerCase() : '';
-                const pubDate = borrowedRows[i].getElementsByTagName('td')[2].textContent.trim();
-                const pubYear = pubDate !== '-' ? new Date(pubDate).getFullYear().toString() : '';
+                const borrowDate = borrowedRows[i].getElementsByTagName('td')[1].textContent.trim();
+                const borrowYear = borrowDate !== '-' ? new Date(borrowDate).getFullYear().toString() : '';
+                const status = borrowedRows[i].getElementsByTagName('td')[4].textContent.toLowerCase();
 
                 const searchTerm = borrowedSearchInput.value.toLowerCase();
-                const selectedGenre = borrowedGenreFilter.value.toLowerCase();
+                const selectedStatus = borrowedStatusFilter.value.toLowerCase();
 
-                const matchesSearch = title.includes(searchTerm) || author.includes(searchTerm);
-                const matchesGenre = selectedGenre === '' || author.includes(selectedGenre);
-                const matchesYear = year === '' || pubYear === year;
+                const matchesSearch = title.includes(searchTerm);
+                const matchesStatus = selectedStatus === '' || status.includes(selectedStatus);
+                const matchesYear = year === '' || borrowYear === year;
 
-                if (matchesSearch && matchesGenre && matchesYear) {
+                if (matchesSearch && matchesStatus && matchesYear) {
                     borrowedRows[i].style.display = '';
                     visibleRows++;
                 } else {
@@ -1717,18 +1983,18 @@ $mostGenre = $mostBorrowedGenre->fetch();
 
             for (let i = 0; i < historyRows.length; i++) {
                 const title = historyRows[i].getElementsByTagName('td')[0].textContent.toLowerCase();
-                const author = historyRows[i].getElementsByTagName('td')[1] ? historyRows[i].getElementsByTagName('td')[1].textContent.toLowerCase() : '';
-                const pubDate = historyRows[i].getElementsByTagName('td')[2].textContent.trim();
-                const pubYear = pubDate !== '-' ? new Date(pubDate).getFullYear().toString() : '';
+                const borrowDate = historyRows[i].getElementsByTagName('td')[1].textContent.trim();
+                const borrowYear = borrowDate !== '-' ? new Date(borrowDate).getFullYear().toString() : '';
+                const status = historyRows[i].getElementsByTagName('td')[3].textContent.toLowerCase();
 
                 const searchTerm = historySearchInput.value.toLowerCase();
-                const selectedGenre = historyGenreFilter.value.toLowerCase();
+                const selectedStatus = historyStatusFilter.value.toLowerCase();
 
-                const matchesSearch = title.includes(searchTerm) || author.includes(searchTerm);
-                const matchesGenre = selectedGenre === '' || author.includes(selectedGenre);
-                const matchesYear = year === '' || pubYear === year;
+                const matchesSearch = title.includes(searchTerm);
+                const matchesStatus = selectedStatus === '' || status.includes(selectedStatus);
+                const matchesYear = year === '' || borrowYear === year;
 
-                if (matchesSearch && matchesGenre && matchesYear) {
+                if (matchesSearch && matchesStatus && matchesYear) {
                     historyRows[i].style.display = '';
                     visibleRows++;
                 } else {
@@ -1803,9 +2069,9 @@ $mostGenre = $mostBorrowedGenre->fetch();
     </script>
 
     <!-- Modal for displaying statistics details -->
-    <div id="statsModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
+    <div id="statsModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+        <div class="modal-content" style="background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 600px; border-radius: 8px; overflow: auto;">
+            <span class="close" style="color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
             <h2 id="modalTitle">Statistics Details</h2>
             <div id="statsDetails"></div>
         </div>
@@ -1837,16 +2103,32 @@ $mostGenre = $mostBorrowedGenre->fetch();
                     modal.style.display = 'block';
 
                     // Fetch stats via AJAX
-                    const formData = new FormData();
-                    formData.append('get_stat', '1');
-                    formData.append('stat', stat);
+                    const params = new URLSearchParams();
+                    params.append('get_stat', '1');
+                    params.append('stat', stat);
 
-                    fetch('dashboard.php', {
+                    console.log('Fetching stats for:', stat);
+                    console.log('Request body:', params.toString());
+                    console.log('URL:', window.location.pathname);
+
+                    fetch(window.location.pathname, {
                         method: 'POST',
-                        body: formData
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                        body: params.toString(),
+                        credentials: 'include'
                     })
-                    .then(response => response.json())
+                    .then(response => {
+                        console.log('Response status:', response.status);
+                        return response.json();
+                    })
                     .then(data => {
+                        console.log('Received data:', data);
+                        // Check if response contains an error
+                        if (data.error) {
+                            statsDetails.innerHTML = `<p style="color: red;">${data.error}</p>`;
+                            return;
+                        }
+
                         let content = '';
                         switch (stat) {
                             case 'distinct_books':
@@ -1860,11 +2142,11 @@ $mostGenre = $mostBorrowedGenre->fetch();
                                 break;
                             case 'total_borrows':
                                 if (data.length > 0) {
-                                    content = '<table style="width: 100%; border-collapse: collapse;"><thead><tr><th style="border: 1px solid #ddd; padding: 8px;">Book</th><th style="border: 1px solid #ddd; padding: 8px;">Borrow Date</th><th style="border: 1px solid #ddd; padding: 8px;">Return Date</th><th style="border: 1px solid #ddd; padding: 8px;">Status</th></tr></thead><tbody>';
+                                    content = '<div style="max-height: 400px; overflow-y: auto;"><table style="width: 100%; border-collapse: collapse;"><thead><tr><th style="border: 1px solid #ddd; padding: 8px;">Book</th><th style="border: 1px solid #ddd; padding: 8px;">Borrow Date</th><th style="border: 1px solid #ddd; padding: 8px;">Return Date</th><th style="border: 1px solid #ddd; padding: 8px;">Status</th></tr></thead><tbody>';
                                     data.forEach(borrow => {
                                         content += `<tr><td style="border: 1px solid #ddd; padding: 8px;">${borrow.title}</td><td style="border: 1px solid #ddd; padding: 8px;">${borrow.borrow_date || '-'}</td><td style="border: 1px solid #ddd; padding: 8px;">${borrow.return_date || '-'}</td><td style="border: 1px solid #ddd; padding: 8px;">${borrow.status}</td></tr>`;
                                     });
-                                    content += '</tbody></table>';
+                                    content += '</tbody></table></div>';
                                 } else {
                                     content = '<p>No borrowing history.</p>';
                                 }
@@ -1884,7 +2166,7 @@ $mostGenre = $mostBorrowedGenre->fetch();
                                 if (data.length > 0) {
                                     content = '<table style="width: 100%; border-collapse: collapse;"><thead><tr><th style="border: 1px solid #ddd; padding: 8px;">Book</th><th style="border: 1px solid #ddd; padding: 8px;">Due Date</th><th style="border: 1px solid #ddd; padding: 8px;">Days Overdue</th></tr></thead><tbody>';
                                     data.forEach(borrow => {
-                                        content += `<tr><td style="border: 1px solid #ddd; padding: 8px;">${borrow.due_date}</td><td style="border: 1px solid #ddd; padding: 8px;">${borrow.days_overdue}</td></tr>`;
+                                        content += `<tr><td style="border: 1px solid #ddd; padding: 8px;">${borrow.title}</td><td style="border: 1px solid #ddd; padding: 8px;">${borrow.due_date}</td><td style="border: 1px solid #ddd; padding: 8px;">${borrow.days_overdue}</td></tr>`;
                                     });
                                     content += '</tbody></table>';
                                 } else {
@@ -1916,8 +2198,8 @@ $mostGenre = $mostBorrowedGenre->fetch();
                         statsDetails.innerHTML = content;
                     })
                     .catch(error => {
-                        statsDetails.innerHTML = '<p>Error loading statistics.</p>';
-                        console.error('Error:', error);
+                        statsDetails.innerHTML = '<p style="color: red;">Error loading statistics. Please try again later. Details: ' + error.message + '</p>';
+                        console.error('Fetch error:', error);
                     });
                 }
             });

@@ -13,7 +13,8 @@ $pdo = $db->getPdo();
 
 // Query data
 $query = "
-    SELECT u.full_name as borrower_name, b.title, bh.due_date, f.amount, f.status as payment_status
+    SELECT CONCAT(u.first_name, ' ', COALESCE(u.middle_name, ''), ' ', u.last_name) as borrower_name,
+           b.title, bh.due_date, f.amount, f.status as payment_status
     FROM fines f
     JOIN borrow_history bh ON f.borrow_id = bh.id
     JOIN users u ON bh.user_id = u.id
